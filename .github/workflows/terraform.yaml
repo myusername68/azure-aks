@@ -1,0 +1,69 @@
+# Runs on every push to terraform/ on main, or manually via workflow_dispatch.
+# Single job: plan with saved plan file, then apply that exact plan.
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+
+  workflow_dispatch:
+
+# id-token: write is required for OIDC authentication to both Azure and GCP
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_DIR: terraform
+
+jobs:
+  plan-and-apply:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # GCP auth — needed for the GCS state backend
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # Azure auth — OIDC federated credential, no stored secrets
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Backend config is passed at init time — no hardcoded bucket in provider.tf
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -backend-config="bucket=${{ secrets.GCS_BUCKET }}" -backend-config="prefix=azure-terraform"
+
+      # Plan is saved to file so apply runs the exact same changes
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -out=tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true

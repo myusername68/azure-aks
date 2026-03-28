@@ -1,0 +1,71 @@
+# Renders ${ACR_REGISTRY} placeholders in application manifests with the real ACR login server,
+# then force-pushes to the deploy branch. ArgoCD watches that branch for changes.
+name: Deploy Applications
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'applications/**'
+
+  workflow_dispatch:
+    inputs:
+      acr_registry:
+        description: 'ACR login server override (e.g. myacr.azurecr.io)'
+        required: false
+
+# contents: write is needed to push to the deploy branch
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  DEPLOY_BRANCH: deploy
+
+jobs:
+  render-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Look up the ACR login server dynamically, or use the manual override
+      - name: Get ACR login server
+        id: acr
+        run: |
+          if [ -n "${{ inputs.acr_registry }}" ]; then
+            echo "server=${{ inputs.acr_registry }}" >> "$GITHUB_OUTPUT"
+          else
+            server=$(az acr list --resource-group azure-aks-rg --query "[0].loginServer" -o tsv)
+            echo "server=${server}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Copy manifests and replace all ${ACR_REGISTRY} placeholders with the real ACR address
+      - name: Render manifests
+        run: |
+          mkdir -p rendered
+          cp -r applications/ rendered/applications/
+          find rendered/applications -type f -name '*.yaml' -exec \
+            sed -i "s|\${ACR_REGISTRY}|${{ steps.acr.outputs.server }}|g" {} +
+
+      # Force-push rendered manifests to the deploy branch.
+      # ArgoCD's app-of-apps watches this branch and auto-syncs.
+      - name: Push to deploy branch
+        run: |
+          cd rendered
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git checkout -b ${{ env.DEPLOY_BRANCH }}
+          git add -A
+          git commit -m "Render manifests - ACR: ${{ steps.acr.outputs.server }}" || echo "No changes"
+          git push origin ${{ env.DEPLOY_BRANCH }} --force
