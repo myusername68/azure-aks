@@ -2,12 +2,12 @@
 # then force-pushes to the deploy branch. ArgoCD watches that branch for changes.
 name: Deploy Applications
 
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - 'applications/**'
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'applications/**'
-
   workflow_dispatch:
     inputs:
       acr_registry:

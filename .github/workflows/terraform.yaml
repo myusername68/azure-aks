@@ -2,13 +2,17 @@
 # Single job: plan with saved plan file, then apply that exact plan.
 name: Terraform
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'terraform/**'
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - 'terraform/**'
 
+  # workflow_dispatch:
+
+on:
   workflow_dispatch:
+
 
 # id-token: write is required for OIDC authentication to both Azure and GCP
 permissions:
