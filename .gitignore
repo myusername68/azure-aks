@@ -37,3 +37,5 @@ kubeconfig.*
 .DS_Store
 Thumbs.db
 kubectl
+.$aks_Diagram.png.bkp
+.$aks_Diagram.drawio.bkp

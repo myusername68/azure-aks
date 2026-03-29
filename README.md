@@ -15,6 +15,10 @@ Production-grade AKS cluster managed with Terraform and ArgoCD. Built to demonst
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 - [gcloud CLI](https://cloud.google.com/sdk/docs/install) (for GCS state backend)
 - [GitHub CLI](https://cli.github.com) (for setting secrets)
+## Architecture
+
+![Architecture Diagram](aks_Diagram.png)
+
 
 ## Setup
 
@@ -122,6 +126,37 @@ kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
 ```
 
 Open `http://localhost:3000` — login: `admin` / `prom-operator`.
+
+## Node Pool Scheduling
+
+The cluster has two node pools with different roles:
+
+- **System pool** — stable, on-demand VMs for infrastructure (ArgoCD, Prometheus, Grafana, CoreDNS, etc.)
+- **User pool** — cheap spot VMs (up to 90% savings) for application workloads, but Azure can reclaim them with 30 seconds notice
+
+We use spot instances for the user pool to keep costs low for a personal/demo cluster. In production, you'd use on-demand VMs for application workloads to guarantee availability — spot evictions would cause downtime. Spot makes sense here because we're optimizing for cost, not uptime.
+
+The user pool has a **taint** (`kubernetes.azure.com/scalesetpriority=spot:NoSchedule`) that blocks all pods by default. This prevents critical infrastructure pods from accidentally landing on spot nodes where they could be evicted at any time. To schedule application workloads on the spot pool, add a **toleration** (allows the pod onto spot nodes) and **node affinity** (prefers spot nodes over system):
+
+```yaml
+tolerations:
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+            - key: kubernetes.azure.com/scalesetpriority
+              operator: In
+              values:
+                - spot
+```
+
+Without these, pods land on the system pool by default.
 
 ## Adding Applications
 
