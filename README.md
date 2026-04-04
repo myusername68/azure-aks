@@ -1,4 +1,6 @@
 # azure-aks
+By [artium-projects.com](https://artium-projects.com)
+
 
 Production-grade AKS cluster managed with Terraform and ArgoCD. Built to demonstrate enterprise Kubernetes infrastructure patterns — networking, GitOps, container registry caching, OIDC authentication, and CI/CD — all fully reproducible and destroyable in minutes.
 
